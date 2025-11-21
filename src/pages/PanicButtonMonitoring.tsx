@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -37,6 +37,112 @@ import {
 import { panicApiService, RealPanicAlert, PanicStats } from '../services/panicApi';
 
 const PanicButtonMonitoring: React.FC = () => {
+  // Demo fallback data (realistic Indian names/locations) used when backend returns no data
+  const DUMMY_ALERTS: RealPanicAlert[] = [
+    {
+      id: 'demo-1',
+      touristId: 'tourist-demo-1',
+      touristName: 'Aarav Patel',
+      phoneNumber: '+91-98765-43210',
+      location: {
+        address: 'Marine Drive, Mumbai, Maharashtra',
+        latitude: 18.9439,
+        longitude: 72.8238
+      },
+      timestamp: new Date(Date.now() - 5 * 60000).toISOString(), // 5 minutes ago
+      severity: 'critical',
+      status: 'active',
+      assignedOfficer: undefined,
+      responseTime: undefined
+    },
+    {
+      id: 'demo-2',
+      touristId: 'tourist-demo-2',
+      touristName: 'Priya Sharma',
+      phoneNumber: '+91-91234-56789',
+      location: {
+        address: 'Connaught Place, New Delhi, Delhi',
+        latitude: 28.6325,
+        longitude: 77.2181
+      },
+      timestamp: new Date(Date.now() - 20 * 60000).toISOString(), // 20 minutes ago
+      severity: 'high',
+      status: 'responding',
+      assignedOfficer: 'Inspector R. Verma',
+      responseTime: 12 * 60000
+    },
+    {
+      id: 'demo-3',
+      touristId: 'tourist-demo-3',
+      touristName: 'Rohit Kumar',
+      phoneNumber: '+91-99887-66554',
+      location: {
+        address: 'MG Road, Bengaluru, Karnataka',
+        latitude: 12.9759,
+        longitude: 77.6050
+      },
+      timestamp: new Date(Date.now() - 60 * 60000).toISOString(), // 1 hour ago
+      severity: 'medium',
+      status: 'acknowledged',
+      assignedOfficer: 'Constable S. Reddy',
+      responseTime: 25 * 60000
+    },
+    {
+      id: 'demo-4',
+      touristId: 'tourist-demo-4',
+      touristName: 'Neha Singh',
+      phoneNumber: '+91-90123-45678',
+      location: {
+        address: 'Baga Beach, Goa',
+        latitude: 15.5503,
+        longitude: 73.7479
+      },
+      timestamp: new Date(Date.now() - 10 * 60000).toISOString(), // 10 minutes ago
+      severity: 'high',
+      status: 'active',
+      assignedOfficer: undefined,
+      responseTime: undefined
+    },
+    {
+      id: 'demo-5',
+      touristId: 'tourist-demo-5',
+      touristName: 'Sana Khan',
+      phoneNumber: '+91-94455-33221',
+      location: {
+        address: 'Charminar, Hyderabad, Telangana',
+        latitude: 17.3616,
+        longitude: 78.4747
+      },
+      timestamp: new Date(Date.now() - 180 * 60000).toISOString(), // 3 hours ago
+      severity: 'low',
+      status: 'resolved',
+      assignedOfficer: 'Inspector M. Khan',
+      responseTime: 8 * 60000
+    },
+    {
+      id: 'demo-6',
+      touristId: 'tourist-demo-6',
+      touristName: 'Vikram Reddy',
+      phoneNumber: '+91-98800-11223',
+      location: {
+        address: 'Gateway of India, Mumbai, Maharashtra',
+        latitude: 18.9218,
+        longitude: 72.8346
+      },
+      timestamp: new Date(Date.now() - 30 * 60000).toISOString(), // 30 minutes ago
+      severity: 'medium',
+      status: 'acknowledged',
+      assignedOfficer: 'Constable A. Desai',
+      responseTime: 15 * 60000
+    }
+  ];
+
+  const DUMMY_STATS: PanicStats = {
+    totalAlertsToday: DUMMY_ALERTS.length,
+    activeAlerts: DUMMY_ALERTS.filter(a => a.status === 'active').length,
+    averageResponseTime: Math.round((DUMMY_ALERTS.filter(a => a.responseTime).reduce((s, a) => s + (a.responseTime || 0), 0) || 0) / (DUMMY_ALERTS.filter(a => a.responseTime).length || 1)),
+    resolvedAlerts: DUMMY_ALERTS.filter(a => a.status === 'resolved').length
+  };
   const [panicAlerts, setPanicAlerts] = useState<RealPanicAlert[]>([]);
   const [stats, setStats] = useState<PanicStats>({
     totalAlertsToday: 0,
@@ -49,13 +155,14 @@ const PanicButtonMonitoring: React.FC = () => {
   const [assignDialog, setAssignDialog] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'info' | 'warning' });
   
   // Form states
   const [officerName, setOfficerName] = useState('');
   const [responseNotes, setResponseNotes] = useState('');
 
   // Load initial data
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     loadData();
     
@@ -80,43 +187,53 @@ const PanicButtonMonitoring: React.FC = () => {
     };
   }, []);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [alertsData, statsData] = await Promise.all([
         panicApiService.getPanicAlerts(),
         panicApiService.getPanicStats()
       ]);
-      
-      setPanicAlerts(alertsData);
-      setStats(statsData);
+      // if backend returns no alerts, fall back to demo data
+      if (!alertsData || alertsData.length === 0) {
+        setPanicAlerts(DUMMY_ALERTS);
+        setStats(DUMMY_STATS);
+        setSnackbar({ open: true, message: 'Using demo panic alerts (no data from backend).', severity: 'info' });
+      } else {
+        setPanicAlerts(alertsData);
+        setStats(statsData);
+      }
     } catch (error) {
-      setSnackbar({
-        open: true,
-        message: 'Failed to load panic alerts data',
-        severity: 'error'
-      });
+      // On error, use demo data so UI remains usable for development/testing
+      console.error('Error loading panic alerts, falling back to demo data:', error);
+      setPanicAlerts(DUMMY_ALERTS);
+      setStats(DUMMY_STATS);
+      setSnackbar({ open: true, message: 'Failed to load backend data — showing demo alerts.', severity: 'info' });
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const refreshData = async () => {
+  const refreshData = useCallback(async () => {
     setRefreshing(true);
     try {
       const [alertsData, statsData] = await Promise.all([
         panicApiService.getPanicAlerts(),
         panicApiService.getPanicStats()
       ]);
-      
-      setPanicAlerts(alertsData);
-      setStats(statsData);
+      if (!alertsData || alertsData.length === 0) {
+        setPanicAlerts(DUMMY_ALERTS);
+        setStats(DUMMY_STATS);
+      } else {
+        setPanicAlerts(alertsData);
+        setStats(statsData);
+      }
     } catch (error) {
-      console.error('Failed to refresh data:', error);
+      console.error('Failed to refresh data, keeping demo or previous data:', error);
     } finally {
       setRefreshing(false);
     }
-  };
+  }, []);
 
   const handleAssignOfficer = async () => {
     if (!selectedAlert || !officerName.trim()) return;
