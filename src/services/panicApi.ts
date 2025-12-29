@@ -3,7 +3,7 @@ import { io, Socket } from "socket.io-client";
 /**
  * This MUST point to backendofsafarsuraksha
  */
-const SOCKET_URL = "http://localhost:3000";
+const SOCKET_URL = "https://backend-safarsuraksha.onrender.com";
 
 /**
  * This interface EXACTLY matches backend payload
